@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Restaurantes - Foody Tijuana</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Merriweather:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['DM Sans', 'sans-serif'],
+                        serif: ['Merriweather', 'serif'],
+                    },
+                    colors: {
+                        foody: {
+                            50: '#FDFBF7',
+                            100: '#FAEEDD',
+                            200: '#F5DCC0',
+                            300: '#F0C29E',
+                            400: '#EB9F75',
+                            500: '#E87C4F',
+                            600: '#D65A31',
+                            700: '#B03E24',
+                        },
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        #map { z-index: 1; }
+        
+        .leaflet-bar a {
+            background-color: #FDFBF7 !important;
+            color: #D65A31 !important;
+            border-bottom: 1px solid #F5DCC0 !important;
+        }
+        .leaflet-bar a:hover {
+            background-color: #FAEEDD !important;
+            color: #E87C4F !important;
+        }
+        
+        .leaflet-popup-content-wrapper {
+            border-radius: 1rem;
+            padding: 0;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        .leaflet-popup-content {
+            margin: 0;
+            width: 280px !important;
+        }
+
+        /* Animaciones para el Toast lateral */
+        @keyframes slideInLeft {
+            from { transform: translateX(-120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .toast-enter {
+            animation: slideInLeft 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        .toast-exit {
+            animation: fadeOut 0.3s ease-in forwards;
+        }
+        
+        /* Ocultar scrollbar de categorías */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-foody-50 h-screen flex flex-col overflow-hidden">
+
+    <!-- Toast Notification Container (Ajustado: 10px izquierda, 10px debajo del header de 64px) -->
+    <div id="toast-container" class="fixed top-[74px] left-[10px] z-[2000] pointer-events-none w-full max-w-xs space-y-3">
+        <!-- Los toasts se inyectarán aquí vía JS -->
+    </div>
+
+    <!-- Navbar Compacto -->
+    <nav class="bg-white shadow-md z-50 h-16 flex-none">
+        <div class="max-w-7xl mx-auto px-4 h-full flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <a href="index.html" class="flex items-center gap-2 group">
+                    <div class="bg-foody-500 text-white p-1.5 rounded-lg shadow-sm group-hover:bg-foody-600 transition">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                    </div>
+                    <span class="font-bold text-xl text-foody-800 tracking-tight text-nowrap">Foody Map</span>
+                </a>
+            </div>
+            
+            <div class="hidden md:flex flex-1 max-w-md mx-4">
+                <div class="relative w-full">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fa-solid fa-search"></i>
+                    </span>
+                    <input type="text" placeholder="¿Qué se te antoja hoy?" 
+                        class="w-full py-2 pl-10 pr-4 text-sm text-gray-700 bg-foody-50 border border-foody-200 rounded-full focus:outline-none focus:ring-2 focus:ring-foody-500 transition-all">
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button class="bg-foody-100 text-foody-700 px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-foody-200 transition flex items-center gap-2">
+                    <i class="fa-solid fa-filter"></i>
+                    <span class="hidden sm:inline">Filtros</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Contenedor del Mapa -->
+    <div class="flex-1 relative">
+        <div id="map" class="w-full h-full cursor-crosshair"></div>
+
+        <!-- Overlay de Categorías -->
+        <div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-[1000] w-full max-w-md px-4 pointer-events-none">
+            <div class="bg-white/90 backdrop-blur-md p-2 rounded-2xl shadow-xl border border-foody-100 flex justify-between items-center pointer-events-auto overflow-x-auto gap-2 no-scrollbar">
+                <button class="flex flex-col items-center justify-center min-w-[60px] p-2 rounded-xl hover:bg-foody-50 transition group">
+                    <div class="bg-orange-100 text-orange-500 p-2 rounded-full mb-1"><i class="fa-solid fa-burger"></i></div>
+                    <span class="text-[10px] font-bold">Fast Food</span>
+                </button>
+                <button class="flex flex-col items-center justify-center min-w-[60px] p-2 rounded-xl hover:bg-foody-50 transition group">
+                    <div class="bg-yellow-100 text-yellow-600 p-2 rounded-full mb-1"><i class="fa-solid fa-utensils"></i></div>
+                    <span class="text-[10px] font-bold">Local</span>
+                </button>
+                <button class="flex flex-col items-center justify-center min-w-[60px] p-2 rounded-xl bg-foody-50 text-foody-700 border border-foody-200">
+                    <div class="bg-foody-500 text-white p-2 rounded-full mb-1"><i class="fa-solid fa-star"></i></div>
+                    <span class="text-[10px] font-bold">Top</span>
+                </button>
+                <button class="flex flex-col items-center justify-center min-w-[60px] p-2 rounded-xl hover:bg-foody-50 transition group">
+                    <div class="bg-blue-100 text-blue-500 p-2 rounded-full mb-1"><i class="fa-solid fa-beer-mug-empty"></i></div>
+                    <span class="text-[10px] font-bold">Bebidas</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+
+    <script>
+        const TIJUANA_LAT = 32.527233;
+        const TIJUANA_LNG = -117.020704;
+
+        // Estilos de iconos
+        function createFoodyIconHtml() {
+            return `
+                <div class="relative group">
+                    <div class="absolute -inset-2 bg-foody-500/30 rounded-full animate-ping"></div>
+                    <div class="w-10 h-10 bg-foody-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white">
+                        <i class="fa-solid fa-utensils"></i>
+                    </div>
+                    <div class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-foody-600"></div>
+                </div>
+            `;
+        }
+
+        const foodyIcon = L.divIcon({
+            className: 'custom-div-icon',
+            html: createFoodyIconHtml(),
+            iconSize: [40, 40],
+            iconAnchor: [20, 40]
+        });
+
+        const defaultIcon = L.divIcon({
+            className: 'custom-div-icon',
+            html: `
+                <div class="w-8 h-8 bg-white rounded-full border-2 border-foody-500 shadow-md flex items-center justify-center text-foody-600 hover:bg-foody-50 transition">
+                    <i class="fa-solid fa-utensils text-sm"></i>
+                </div>
+            `,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+        });
+
+        // Generador de Popup Unificado
+        function createPopupHtml(name, desc) {
+            return `
+                <div class="text-center p-4">
+                    <div class="bg-foody-100 text-foody-600 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fa-solid fa-utensils text-lg"></i>
+                    </div>
+                    <h3 class="font-bold text-foody-800 text-lg font-serif leading-tight">${name}</h3>
+                    <p class="text-sm text-gray-600 mt-2">${desc || 'Explora el sabor de este lugar.'}</p>
+                    <button class="mt-4 bg-foody-500 text-white text-xs px-6 py-2 rounded-full hover:bg-foody-600 font-bold transition">Ver menú</button>
+                </div>
+            `;
+        }
+
+        // Sistema de Toasts
+        function showToast(type, title, message) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let iconHtml, borderClass;
+            if (type === 'loading') {
+                iconHtml = '<i class="fa-solid fa-circle-notch fa-spin text-foody-500 text-xl"></i>';
+                borderClass = 'border-foody-500';
+            } else if (type === 'success') {
+                iconHtml = '<i class="fa-solid fa-circle-check text-green-500 text-xl"></i>';
+                borderClass = 'border-green-500';
+            }
+
+            toast.className = `bg-white shadow-2xl rounded-lg p-4 flex items-center gap-4 border-l-4 ${borderClass} toast-enter pointer-events-auto w-80`;
+            toast.innerHTML = `
+                <div class="shrink-0">${iconHtml}</div>
+                <div class="overflow-hidden">
+                    <h4 class="font-bold text-gray-800 text-sm truncate">${title}</h4>
+                    ${message ? `<p class="text-xs text-gray-500 truncate">${message}</p>` : ''}
+                </div>
+            `;
+
+            container.appendChild(toast);
+            return toast;
+        }
+
+        function removeToast(toastElement) {
+            toastElement.classList.replace('toast-enter', 'toast-exit');
+            setTimeout(() => toastElement.remove(), 300);
+        }
+
+        // Mapa
+        const map = L.map('map', { zoomControl: false, center: [TIJUANA_LAT, TIJUANA_LNG], zoom: 15 });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(map);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Marcadores Iniciales (Unificados)
+        L.marker([TIJUANA_LAT, TIJUANA_LNG], { icon: foodyIcon }).addTo(map)
+            .bindPopup(createPopupHtml("Zona Gastronómica Río", "El corazón culinario de Tijuana."));
+
+        L.marker([32.5287, -117.0278], { icon: defaultIcon }).addTo(map)
+            .bindPopup(createPopupHtml("Tacos El Poblano", "Auténticos tacos de asada y adobada."));
+
+        // Click para agregar
+        map.on('click', function(e) {
+            const { lat, lng } = e.latlng;
+            const formHtml = `
+                <div class="p-4 bg-white">
+                    <div class="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                        <i class="fa-solid fa-map-pin text-foody-500"></i>
+                        <h3 class="font-bold text-gray-800 text-xs uppercase tracking-widest">Nuevo Restaurante</h3>
+                    </div>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Nombre</label>
+                            <input type="text" id="new-rest-name" class="w-full bg-foody-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-foody-400 outline-none transition" placeholder="Nombre del lugar">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Descripción</label>
+                            <textarea id="new-rest-desc" rows="2" class="w-full bg-foody-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-foody-400 outline-none transition resize-none" placeholder="Breve descripción..."></textarea>
+                        </div>
+                        <button onclick="saveRestaurant(${lat}, ${lng})" class="w-full bg-foody-600 text-white rounded-lg py-2.5 text-xs font-bold shadow-lg hover:bg-foody-700 transition-all flex justify-center items-center gap-2">
+                            <i class="fa-solid fa-save"></i> Guardar Restaurante
+                        </button>
+                    </div>
+                </div>
+            `;
+            L.popup().setLatLng(e.latlng).setContent(formHtml).openOn(map);
+        });
+
+        window.saveRestaurant = function(lat, lng) {
+            const name = document.getElementById('new-rest-name').value.trim();
+            const desc = document.getElementById('new-rest-desc').value.trim();
+
+            if (!name) return document.getElementById('new-rest-name').focus();
+
+            map.closePopup();
+            const loading = showToast('loading', 'Procesando...', 'Guardando nueva ubicación.');
+
+            setTimeout(() => {
+                removeToast(loading);
+                const success = showToast('success', '¡Éxito!', `${name} ha sido añadido.`);
+                setTimeout(() => removeToast(success), 3000);
+
+                L.marker([lat, lng], { icon: defaultIcon }).addTo(map)
+                    .bindPopup(createPopupHtml(name, desc))
+                    .openPopup();
+
+                map.flyTo([lat, lng], 16, { duration: 1 });
+            }, 1000);
+        };
+    </script>
+</body>
+</html>
